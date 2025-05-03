@@ -1,0 +1,48 @@
+name: Sign & Release Shortcut
+on:
+  # Manual button in Actions tab
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: 📥 Checkout repo
+        uses: actions/checkout@v4
+
+      - name: 🔐 Set up Keychain for Notary
+        run: |
+          # Create a temporary keychain so the notarization
+          # credentials don't hang around.
+          security create-keychain -p "$RUNNER_TEMP" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$RUNNER_TEMP" build.keychain
+          # Log‑in to notary service once so `shortcuts sign` is non‑interactive
+          xcrun notarytool store-credentials \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "" \
+            --keychain build.keychain \
+            --keychain-password "$RUNNER_TEMP"
+
+      - name: 🖋  Sign Shortcut
+        run: |
+          mkdir -p signed
+          xcrun shortcuts sign --mode anyone \
+            --input "unsigned/News-Flash_FullBuild.shortcut" \
+            --output "signed/News-Flash.signed.shortcut"
+
+      - name: 📦 Upload signed file
+        uses: actions/upload-artifact@v4
+        with:
+          name: News-Flash.signed.shortcut
+          path: signed/News-Flash.signed.shortcut
+
+      # Optional: create a GitHub Release on every run
+      - name: 🚀 Publish Release (optional)
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "signed-$(date +'%Y%m%d-%H%M%S')"
+          files: signed/News-Flash.signed.shortcut
